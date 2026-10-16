@@ -39,6 +39,23 @@ function httpsRequest(options, data = null) {
   });
 }
 
+async function execWithRetry(command, options = {}, retries = 3, initialDelayMs = 3000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return execSync(command, { stdio: 'inherit', timeout: 600000, ...options });
+    } catch (err) {
+      if (attempt < retries) {
+        const delay = initialDelayMs * attempt;
+        console.warn(`⚠️ [Git 重试] 执行出错 (${err.message})`);
+        console.warn(`⏳ 等待 ${delay / 1000} 秒后进行第 ${attempt + 1}/${retries} 次重试...`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function safeHttpsRequest(options, data = null, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -189,11 +206,11 @@ async function main() {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
 
-      // Clone mirror (包含全部分支、Tag与版本提交)，单库超时延长到 10 分钟 (600000ms)
-      execSync(`git clone --mirror --quiet "${cloneUrl}" "${tempDir}"`, { stdio: 'inherit', timeout: 600000 });
+      // Clone mirror (包含全部分支、Tag与版本提交)，单库超时延长到 10 分钟 (600000ms)，带自动重试
+      await execWithRetry(`git clone --mirror --quiet "${cloneUrl}" "${tempDir}"`);
 
-      // Push mirror to Gitee
-      execSync(`git -C "${tempDir}" push --mirror --force --quiet "${pushUrl}"`, { stdio: 'inherit', timeout: 600000 });
+      // Push mirror to Gitee，遇到 Connection reset 等网络瞬断自动重试 3 次
+      await execWithRetry(`git -C "${tempDir}" push --mirror --force --quiet "${pushUrl}"`);
 
       successCount++;
       console.log(`✅ ${repo.name} 镜像同步成功`);
@@ -205,6 +222,8 @@ async function main() {
       if (fs.existsSync(tempDir)) {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
       }
+      // 在每个仓库之间稍微休眠 1.5 秒，避免高频并发击穿 Gitee 防火墙限制
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 
