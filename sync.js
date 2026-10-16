@@ -101,11 +101,17 @@ async function getAllGithubRepos() {
   return allRepos;
 }
 
+function getGiteeRepoName(name) {
+  // Gitee 不允许仓库名以短横线 (-) 或下划线 (_) 结尾
+  return name.replace(/[-_.]+$/, '');
+}
+
 async function ensureGiteeRepo(repo) {
+  const giteeName = getGiteeRepoName(repo.name);
   try {
     const checkRes = await safeHttpsRequest({
       hostname: 'gitee.com',
-      path: `/api/v5/repos/${GITEE_USER}/${encodeURIComponent(repo.name)}?access_token=${GITEE_TOKEN}`,
+      path: `/api/v5/repos/${GITEE_USER}/${encodeURIComponent(giteeName)}?access_token=${GITEE_TOKEN}`,
       method: 'GET',
       headers: { 'User-Agent': 'SyncScript' }
     });
@@ -115,7 +121,7 @@ async function ensureGiteeRepo(repo) {
     }
 
     // Create repo on Gitee
-    console.log(`[Gitee] 正在新建仓库: ${repo.name} (私有: ${repo.private})...`);
+    console.log(`[Gitee] 正在新建仓库: ${giteeName} (原名: ${repo.name}, 私有: ${repo.private})...`);
     const createRes = await safeHttpsRequest({
       hostname: 'gitee.com',
       path: '/api/v5/user/repos',
@@ -126,7 +132,7 @@ async function ensureGiteeRepo(repo) {
       }
     }, {
       access_token: GITEE_TOKEN,
-      name: repo.name,
+      name: giteeName,
       description: repo.description || 'Mirrored from GitHub',
       private: repo.private,
       has_issues: true,
@@ -134,14 +140,14 @@ async function ensureGiteeRepo(repo) {
     });
 
     if (createRes.status === 201) {
-      console.log(`[Gitee] 新建仓库成功: ${repo.name}`);
+      console.log(`[Gitee] 新建仓库成功: ${giteeName}`);
       return true;
     } else {
-      console.error(`[Gitee] 新建仓库失败: ${repo.name}, 状态码: ${createRes.status}`, createRes.data);
+      console.error(`[Gitee] 新建仓库失败: ${giteeName}, 状态码: ${createRes.status}`, createRes.data);
       return false;
     }
   } catch(e) {
-    console.error(`[Gitee API Error] 检查/创建仓库异常: ${repo.name}:`, e.message);
+    console.error(`[Gitee API Error] 检查/创建仓库异常: ${giteeName}:`, e.message);
     return false;
   }
 }
@@ -165,10 +171,11 @@ async function main() {
       continue;
     }
 
-    console.log(`\n[${i + 1}/${repos.length}] 正在同步: ${repo.name} (${repo.private ? '🔒 私有' : '🌐 公开'})...`);
+    const giteeName = getGiteeRepoName(repo.name);
+    console.log(`\n[${i + 1}/${repos.length}] 正在同步: ${repo.name} -> ${giteeName} (${repo.private ? '🔒 私有' : '🌐 公开'})...`);
     const tempDir = path.join(process.cwd(), `mirror_${repo.name}`);
     const cloneUrl = `https://${GH_TOKEN}@github.com/${repo.full_name}.git`;
-    const pushUrl = `https://${encodeURIComponent(GITEE_USER)}:${encodeURIComponent(GITEE_TOKEN)}@gitee.com/${GITEE_USER}/${encodeURIComponent(repo.name)}.git`;
+    const pushUrl = `https://${encodeURIComponent(GITEE_USER)}:${encodeURIComponent(GITEE_TOKEN)}@gitee.com/${GITEE_USER}/${encodeURIComponent(giteeName)}.git`;
 
     try {
       const ready = await ensureGiteeRepo(repo);
