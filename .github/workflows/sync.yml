@@ -1,9 +1,8 @@
 name: GitHub to Gitee 仓库镜像同步
 
 on:
-  schedule:
-    - cron: '0 3 * * *' # 每天 UTC 03:00 (北京时间 11:00) 定时同步
-  workflow_dispatch:      # 支持手动一键触发立即同步
+  workflow_dispatch:      # 支持外部 API 与手动触发立即同步
+  repository_dispatch:    # 支持外部 Webhook / 外部面板事件触发
 
 permissions:
   actions: write
